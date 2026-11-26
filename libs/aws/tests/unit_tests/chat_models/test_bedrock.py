@@ -10,6 +10,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableBinding
@@ -3083,3 +3084,216 @@ def test_convert_one_message_to_text_openai_tool_message(
         f"<|channel|>commentary"
         f"<|message|>result<|end|>"
     )
+
+
+def _mock_bedrock_throttling_error() -> Exception:
+    from botocore.exceptions import ClientError
+
+    return ClientError(
+        {
+            "Error": {
+                "Code": "ThrottlingException",
+                "Message": "Too many requests",
+            },
+            "ResponseMetadata": {"HTTPStatusCode": 429},
+        },
+        "InvokeModel",
+    )
+
+
+def test_chat_bedrock_invoke_maps_model_errors() -> None:
+    from botocore.exceptions import ClientError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    error = _mock_bedrock_throttling_error()
+    mock_client = mock.Mock()
+    mock_client.invoke_model.side_effect = error
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ModelRateLimitError) as exc_info:
+        model.invoke("Hello")
+
+    assert isinstance(exc_info.value, ClientError)
+    assert exc_info.value.__cause__ is error
+
+
+def test_chat_bedrock_stream_maps_model_errors() -> None:
+    from botocore.exceptions import ClientError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    error = _mock_bedrock_throttling_error()
+    mock_client = mock.Mock()
+    mock_client.invoke_model_with_response_stream.side_effect = error
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ModelRateLimitError) as exc_info:
+        list(model.stream("Hello"))
+
+    assert isinstance(exc_info.value, ClientError)
+    assert exc_info.value.__cause__ is error
+
+
+@pytest.mark.asyncio
+async def test_chat_bedrock_ainvoke_maps_model_errors() -> None:
+    from botocore.exceptions import ClientError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    error = _mock_bedrock_throttling_error()
+    mock_client = mock.Mock()
+    mock_client.invoke_model.side_effect = error
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ModelRateLimitError) as exc_info:
+        await model.ainvoke("Hello")
+
+    assert isinstance(exc_info.value, ClientError)
+    assert exc_info.value.__cause__ is error
+
+
+def test_chat_bedrock_stream_maps_event_stream_errors() -> None:
+    from botocore.exceptions import EventStreamError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    error = EventStreamError(
+        {
+            "Error": {
+                "Code": "throttlingException",
+                "Message": "Too many requests",
+            },
+            "ResponseMetadata": {"HTTPStatusCode": 429},
+        },
+        "InvokeModelWithResponseStream",
+    )
+
+    def raise_stream_error():
+        raise error
+        yield {}
+
+    mock_body = MagicMock()
+    mock_body.__iter__ = MagicMock(return_value=raise_stream_error())
+    mock_client = mock.Mock()
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ModelRateLimitError) as exc_info:
+        list(model.stream("Hello"))
+
+    assert isinstance(exc_info.value, EventStreamError)
+    assert exc_info.value.__cause__ is error
+    mock_body.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_chat_bedrock_astream_maps_model_errors() -> None:
+    from botocore.exceptions import ClientError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    error = _mock_bedrock_throttling_error()
+    mock_client = mock.Mock()
+    mock_client.invoke_model_with_response_stream.side_effect = error
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ModelRateLimitError) as exc_info:
+        async for _ in model.astream("Hello"):
+            pass
+
+    assert isinstance(exc_info.value, ClientError)
+    assert exc_info.value.__cause__ is error
+
+
+def test_chat_bedrock_maps_botocore_timeouts() -> None:
+    from botocore.exceptions import ReadTimeoutError
+    from langchain_core.exceptions import ModelTimeoutError
+
+    error = ReadTimeoutError(
+        endpoint_url="https://bedrock-runtime.us-east-1.amazonaws.com"
+    )
+    mock_client = mock.Mock()
+    mock_client.invoke_model.side_effect = error
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ModelTimeoutError) as exc_info:
+        model.invoke("Hello")
+
+    assert isinstance(exc_info.value, ReadTimeoutError)
+    assert exc_info.value.__cause__ is error
+
+
+class _ErrorRecorder(BaseCallbackHandler):
+    """Record every ``on_llm_error`` call."""
+
+    def __init__(self) -> None:
+        self.errors: list[BaseException] = []
+
+    def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
+        self.errors.append(error)
+
+
+def test_chat_bedrock_stream_reports_mid_stream_error_once() -> None:
+    """The mapped error reaches callbacks exactly once."""
+    from botocore.exceptions import EventStreamError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    def raise_stream_error() -> Any:
+        raise EventStreamError(
+            {"Error": {"Code": "throttlingException", "Message": "Too many requests"}},
+            "InvokeModelWithResponseStream",
+        )
+        yield {}
+
+    mock_client = mock.Mock()
+    mock_client.invoke_model_with_response_stream.return_value = {
+        "body": raise_stream_error()
+    }
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+    recorder = _ErrorRecorder()
+
+    with pytest.raises(ModelRateLimitError):
+        list(model.stream("Hello", config={"callbacks": [recorder]}))
+
+    assert len(recorder.errors) == 1
+    assert isinstance(recorder.errors[0], ModelRateLimitError)
+
+
+def test_chat_bedrock_does_not_alter_unrelated_exceptions() -> None:
+    error = ValueError("not a bedrock error")
+    mock_client = mock.Mock()
+    mock_client.invoke_model.side_effect = error
+    model = ChatBedrock(
+        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region_name="us-west-2",
+        client=mock_client,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        model.invoke("Hello")
+
+    assert exc_info.value is error

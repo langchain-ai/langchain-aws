@@ -1,11 +1,13 @@
 # type:ignore
 
 import json
-from typing import AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessageChunk
+from langchain_core.outputs import GenerationChunk
 
 from langchain_aws import BedrockLLM
 from langchain_aws.llms.bedrock import (
@@ -1485,4 +1487,106 @@ def test_stream_closes_response_body_on_error_event() -> None:
                 messages=[{"role": "user", "content": "Hello"}]
             )
         )
+    mock_body.close.assert_called_once()
+
+
+class _ErrorRecorder(BaseCallbackHandler):
+    """Record every ``on_llm_error`` call."""
+
+    def __init__(self) -> None:
+        self.errors: list[BaseException] = []
+
+    def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
+        self.errors.append(error)
+
+
+def _throttling_error() -> Exception:
+    from botocore.exceptions import ClientError
+
+    return ClientError(
+        {
+            "Error": {"Code": "ThrottlingException", "Message": "Too many requests"},
+            "ResponseMetadata": {"HTTPStatusCode": 429},
+        },
+        "InvokeModelWithResponseStream",
+    )
+
+
+@pytest.mark.asyncio
+async def test_astream_maps_open_error_and_reports_it_once() -> None:
+    from botocore.exceptions import ClientError
+    from langchain_core.exceptions import ModelRateLimitError
+
+    mock_client = MagicMock()
+    mock_client.invoke_model_with_response_stream.side_effect = _throttling_error()
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+    recorder = _ErrorRecorder()
+
+    with pytest.raises(ModelRateLimitError) as exc_info:
+        async for _ in llm.astream("Hello", config={"callbacks": [recorder]}):
+            pass
+
+    assert isinstance(exc_info.value, ClientError)
+    assert len(recorder.errors) == 1
+
+
+@pytest.mark.asyncio
+async def test_astream_maps_mid_stream_error_and_reports_it_once() -> None:
+    from langchain_core.exceptions import ModelRateLimitError
+
+    mock_client = MagicMock()
+    mock_body = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+    recorder = _ErrorRecorder()
+
+    async def failing_stream(*args: Any, **kwargs: Any) -> AsyncGenerator:
+        yield GenerationChunk(text="partial")
+        raise _throttling_error()
+
+    with patch(
+        "langchain_aws.llms.bedrock.LLMInputOutputAdapter.aprepare_output_stream",
+        side_effect=failing_stream,
+    ):
+        with pytest.raises(ModelRateLimitError):
+            async for _ in llm.astream("Hello", config={"callbacks": [recorder]}):
+                pass
+
+    assert len(recorder.errors) == 1
+    mock_body.close.assert_called_once()
+
+
+def test_stream_maps_mid_stream_error_and_reports_it_once() -> None:
+    from langchain_core.exceptions import ModelRateLimitError
+
+    mock_client = MagicMock()
+    mock_body = MagicMock()
+    mock_client.invoke_model_with_response_stream.return_value = {"body": mock_body}
+    llm = BedrockLLM(
+        client=mock_client,
+        model="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        region="us-west-2",
+    )
+    recorder = _ErrorRecorder()
+
+    def failing_stream(*args: Any, **kwargs: Any) -> Any:
+        yield GenerationChunk(text="partial")
+        raise _throttling_error()
+
+    with patch(
+        "langchain_aws.llms.bedrock.LLMInputOutputAdapter.prepare_output_stream",
+        side_effect=failing_stream,
+    ):
+        with pytest.raises(ModelRateLimitError):
+            list(llm.stream("Hello", config={"callbacks": [recorder]}))
+
+    assert len(recorder.errors) == 1
     mock_body.close.assert_called_once()

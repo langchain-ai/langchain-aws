@@ -6,15 +6,351 @@ import threading
 import time
 from abc import abstractmethod
 from datetime import timedelta
-from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Literal,
+    NoReturn,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
-from botocore.exceptions import BotoCoreError, UnknownServiceError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    EventStreamError,
+    IncompleteReadError,
+    ProxyConnectionError,
+    ReadTimeoutError,
+    ResponseStreamingError,
+    SSLError,
+    UnknownServiceError,
+)
 from botocore.tokens import FrozenAuthToken
+from langchain_core.exceptions import (
+    ContextOverflowError,
+    ModelAPIError,
+    ModelAuthenticationError,
+    ModelConnectionError,
+    ModelError,
+    ModelInvalidRequestError,
+    ModelNotFoundError,
+    ModelPermissionDeniedError,
+    ModelRateLimitError,
+    ModelTimeoutError,
+)
 from langchain_core.messages import AIMessage
 from packaging import version
 from pydantic import SecretStr
 
 logger = logging.getLogger(__name__)
+
+
+class BedrockContextOverflowError(ClientError, ContextOverflowError):
+    """ClientError raised when input exceeds the Bedrock model's context window."""
+
+    def __reduce__(self) -> Tuple[Any, ...]:
+        # ClientError.__reduce__ rebuilds a plain ClientError, losing the overflow type.
+        return BedrockContextOverflowError, (self.response, self.operation_name)
+
+
+# Lowercased fragments of the ValidationException messages Bedrock returns when
+# the prompt exceeds the model's context window.
+_CONTEXT_OVERFLOW_MARKERS = (
+    # Claude Sonnet 4.5, DeepSeek R1
+    "input is too long",
+    # Claude Haiku 4.5 and newer Claude models; also matched by langchain-anthropic
+    "prompt is too long",
+    # Amazon Nova
+    "input tokens exceeded",
+    # Meta Llama, Mistral, and other open-weight models (gpt-oss, Qwen, DeepSeek V3)
+    "maximum context length",
+    # OpenAI GPT; also matched by langchain-openai
+    "context_length_exceeded",
+    "exceeds the context window",
+    "input tokens exceed the configured limit",
+    # Kimi K3
+    "exceed model maximum",
+    # matched by LiteLLM (Bedrock, vLLM/SGLang)
+    "too many input tokens",
+    "is longer than the model's context length",
+)
+
+_CONTEXT_OVERFLOW_ERROR_TYPES: Dict[
+    Type[Exception], Type[BedrockContextOverflowError]
+] = {}
+
+
+def _context_overflow_error_type(
+    error_type: Type[Exception],
+) -> Type[BedrockContextOverflowError]:
+    """Return a subclass of both the original botocore type and ContextOverflowError."""
+    if issubclass(BedrockContextOverflowError, error_type):
+        return BedrockContextOverflowError
+    if error_type not in _CONTEXT_OVERFLOW_ERROR_TYPES:
+        _CONTEXT_OVERFLOW_ERROR_TYPES[error_type] = cast(
+            Type[BedrockContextOverflowError],
+            type(error_type.__name__, (error_type, BedrockContextOverflowError), {}),
+        )
+    return _CONTEXT_OVERFLOW_ERROR_TYPES[error_type]
+
+
+def _raise_if_context_overflow(error: Exception) -> None:
+    """Raise a ContextOverflowError when Bedrock reports an oversized prompt."""
+    if not isinstance(error, (ClientError, EventStreamError)):
+        return
+
+    error_info = error.response.get("Error", {})
+    # Event stream errors use a lowercase code, e.g. "validationException".
+    if str(error_info.get("Code", "")).lower() != "validationexception":
+        return
+
+    error_message = str(error_info.get("Message", "")).lower()
+    if any(marker in error_message for marker in _CONTEXT_OVERFLOW_MARKERS):
+        overflow_type = _context_overflow_error_type(type(error))
+        raise overflow_type(error.response, error.operation_name) from error
+
+
+_BEDROCK_ERROR_MAPPING: Dict[str, Type[Exception]] = {
+    "throttlingexception": ModelRateLimitError,
+    "toomanyrequestsexception": ModelRateLimitError,
+    "servicequotaexceededexception": ModelRateLimitError,
+    "modelnotreadyexception": ModelRateLimitError,
+    "throttling": ModelRateLimitError,
+    "throttledexception": ModelRateLimitError,
+    "requestthrottledexception": ModelRateLimitError,
+    "requestthrottled": ModelRateLimitError,
+    "requestlimitexceeded": ModelRateLimitError,
+    "bandwidthlimitexceeded": ModelRateLimitError,
+    "accessdeniedexception": ModelPermissionDeniedError,
+    "unrecognizedclientexception": ModelAuthenticationError,
+    "invalidclienttokenid": ModelAuthenticationError,
+    "expiredtokenexception": ModelAuthenticationError,
+    "invalidsignatureexception": ModelAuthenticationError,
+    "incompletesignature": ModelAuthenticationError,
+    "invalidaccesskeyid": ModelAuthenticationError,
+    "resourcenotfoundexception": ModelNotFoundError,
+    "validationexception": ModelInvalidRequestError,
+    "badrequestexception": ModelInvalidRequestError,
+    "modeltimeoutexception": ModelTimeoutError,
+    "internalserverexception": ModelAPIError,
+    "internalfailure": ModelAPIError,
+    "serviceunavailableexception": ModelAPIError,
+    "modelerrorexception": ModelAPIError,
+    "modelstreamerrorexception": ModelAPIError,
+}
+
+_BEDROCK_MODEL_ERROR_TYPES: Dict[
+    Tuple[Type[Exception], Type[Exception], Tuple[Type[Exception], ...]],
+    Type[Exception],
+] = {}
+
+_BEDROCK_TRANSPORT_ERROR_MAPPING: Tuple[
+    Tuple[Type[Exception], Type[Exception]], ...
+] = (
+    (ConnectTimeoutError, ModelTimeoutError),
+    (ReadTimeoutError, ModelTimeoutError),
+    (ConnectionClosedError, ModelConnectionError),
+    (ResponseStreamingError, ModelConnectionError),
+    (IncompleteReadError, ModelConnectionError),
+    (EndpointConnectionError, ModelConnectionError),
+    (ProxyConnectionError, ModelConnectionError),
+    (SSLError, ModelConnectionError),
+)
+
+
+def _new_bedrock_model_error(
+    mapped_type: Type[Exception], args: Tuple[Any, ...], state: Dict[str, Any]
+) -> Exception:
+    """Build a mapped exception by copying state, without calling `__init__`.
+
+    Botocore exception constructors differ (`ClientError` takes a response,
+    `BotoCoreError` takes keyword arguments), so the mapped error is rebuilt from
+    the original's `args` and `__dict__` instead. This one path serves service
+    errors, transport errors and unpickling alike.
+    """
+    mapped_error = mapped_type.__new__(mapped_type)
+    mapped_error.__dict__.update(state)
+    Exception.__init__(mapped_error, *args)
+    return mapped_error
+
+
+def _reduce_bedrock_model_error(error: Any) -> Tuple[Any, ...]:
+    """Preserve the generated LangChain/Botocore exception type when pickling."""
+    error_type = type(error)
+    return (
+        _rebuild_bedrock_model_error,
+        (
+            getattr(error_type, "__bedrock_botocore_error_type__"),
+            getattr(error_type, "__bedrock_model_error_type__"),
+            getattr(error_type, "__bedrock_extra_bases__"),
+            error.args,
+            error.__dict__,
+        ),
+    )
+
+
+def _rebuild_bedrock_model_error(
+    botocore_error_type: Type[Exception],
+    model_error_type: Type[Exception],
+    extra_bases: Tuple[Type[Exception], ...],
+    args: Tuple[Any, ...],
+    state: Dict[str, Any],
+) -> Exception:
+    """Rebuild a generated mapped exception during unpickling."""
+    mapped_type = _bedrock_model_error_type(
+        botocore_error_type, model_error_type, extra_bases
+    )
+    return _new_bedrock_model_error(mapped_type, args, state)
+
+
+def _bedrock_model_error_type(
+    botocore_error_type: Type[Exception],
+    model_error_type: Type[Exception],
+    extra_bases: Tuple[Type[Exception], ...] = (),
+) -> Type[Exception]:
+    """Create a cached exception type inheriting from Botocore and LangChain errors."""
+    key = (botocore_error_type, model_error_type, extra_bases)
+    if key not in _BEDROCK_MODEL_ERROR_TYPES:
+        name = f"{botocore_error_type.__name__}{model_error_type.__name__}"
+        _BEDROCK_MODEL_ERROR_TYPES[key] = type(
+            name,
+            (botocore_error_type, model_error_type, *extra_bases),
+            {
+                "__module__": __name__,
+                "__bedrock_botocore_error_type__": botocore_error_type,
+                "__bedrock_model_error_type__": model_error_type,
+                "__bedrock_extra_bases__": extra_bases,
+                "__reduce__": _reduce_bedrock_model_error,
+            },
+        )
+    return _BEDROCK_MODEL_ERROR_TYPES[key]
+
+
+def _as_bedrock_model_error(
+    error: Exception,
+    model_error_type: Type[Exception],
+    *,
+    extra_bases: Tuple[Type[Exception], ...] = (),
+    message: Optional[str] = None,
+) -> Exception:
+    """Return `error` re-typed as both its own type and `model_error_type`.
+
+    `message` replaces the exception text when given. The original's response,
+    operation name and other attributes are preserved.
+    """
+    mapped_type = _bedrock_model_error_type(type(error), model_error_type, extra_bases)
+    args = error.args if message is None else (message,)
+    return _new_bedrock_model_error(mapped_type, args, error.__dict__)
+
+
+def _model_error_type_from_status(status_code: Any) -> Optional[Type[Exception]]:
+    """Map an HTTP status code to a LangChain model exception."""
+    try:
+        status = int(status_code)
+    except (TypeError, ValueError):
+        return None
+
+    if status == 400:
+        return ModelInvalidRequestError
+    if status == 401:
+        return ModelAuthenticationError
+    if status == 403:
+        return ModelPermissionDeniedError
+    if status == 404:
+        return ModelNotFoundError
+    if status in (408, 504):
+        return ModelTimeoutError
+    if status == 429:
+        return ModelRateLimitError
+    if 500 <= status <= 599:
+        return ModelAPIError
+    return None
+
+
+def _handle_bedrock_error(error: Exception) -> NoReturn:
+    """Raise a standardized LangChain exception while preserving the Botocore type.
+
+    Unknown exceptions, and errors that are already LangChain model exceptions,
+    are re-raised unchanged. Context overflow is detected before
+    the generic ValidationException mapping, and the InvokeTool permission message
+    retains its existing actionable ValueError behavior.
+    """
+    if isinstance(error, ModelError):
+        raise error
+
+    if not isinstance(error, (ClientError, EventStreamError)):
+        for (
+            botocore_error_type,
+            transport_model_error_type,
+        ) in _BEDROCK_TRANSPORT_ERROR_MAPPING:
+            if isinstance(error, botocore_error_type):
+                raise _as_bedrock_model_error(
+                    error, transport_model_error_type
+                ) from error
+        raise error
+
+    _raise_if_context_overflow(error)
+
+    error_info = error.response.get("Error", {})
+    error_code = str(error_info.get("Code", "")).lower()
+    error_message = str(error)
+
+    if error_code == "accessdeniedexception" and "InvokeTool" in error_message:
+        message = (
+            "System tools require 'bedrock:InvokeTool' IAM permission. "
+            "Please add this permission to your IAM role/user policy. "
+            "Example policy statement:\n"
+            "{\n"
+            '  "Effect": "Allow",\n'
+            '  "Action": ["bedrock:InvokeModel"],\n'
+            '  "Resource": "arn:aws:bedrock:*::foundation-model/*"\n'
+            "}\n"
+            f"Original error: {error}"
+        )
+        raise _as_bedrock_model_error(
+            error,
+            ModelPermissionDeniedError,
+            extra_bases=(ValueError,),
+            message=message,
+        ) from error
+
+    model_error_type: Optional[Type[Exception]] = _BEDROCK_ERROR_MAPPING.get(error_code)
+
+    # ModelErrorException and ModelStreamErrorException may wrap an upstream
+    # provider error. Prefer its original status when it is available. botocore
+    # exposes modeled error members at the top level of ``response`` (not inside
+    # ``Error``); event-stream errors may carry them inside ``Error`` instead.
+    response_metadata = error.response.get("ResponseMetadata", {})
+    if error_code in ("modelerrorexception", "modelstreamerrorexception"):
+        original_status = error.response.get(
+            "originalStatusCode", error_info.get("originalStatusCode")
+        )
+        model_error_type = (
+            _model_error_type_from_status(original_status)
+            or _model_error_type_from_status(response_metadata.get("HTTPStatusCode"))
+            or model_error_type
+        )
+
+    if model_error_type is None:
+        model_error_type = _model_error_type_from_status(
+            response_metadata.get("HTTPStatusCode")
+        )
+
+    if model_error_type is None:
+        raise error
+
+    raise _as_bedrock_model_error(error, model_error_type) from error
 
 
 class _StaticTokenProvider:
