@@ -2,11 +2,12 @@
 Data models for AgentCore Memory Checkpoint Saver.
 """
 
+import datetime
 import hashlib
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,11 @@ class WriteItem(BaseModel):
     channel: str
     value: Any
     task_path: str = ""
+    _event_timestamp: datetime.datetime | None = PrivateAttr(default=None)
+    _source_rank: int = PrivateAttr(default=0)
+    _service_event_index: int | None = PrivateAttr(default=None)
+    _payload_index: int = PrivateAttr(default=0)
+    _write_index: int | None = PrivateAttr(default=None)
 
 
 class CheckpointEvent(BaseModel):
