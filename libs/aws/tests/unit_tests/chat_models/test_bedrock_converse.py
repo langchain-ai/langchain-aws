@@ -37,7 +37,6 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableBinding
 from langchain_tests.unit_tests import ChatModelUnitTests
 from pydantic import BaseModel, Field, SecretStr
-from syrupy import SnapshotAssertion
 
 from langchain_aws import ChatBedrockConverse
 from langchain_aws.chat_models.bedrock_converse import (
@@ -118,10 +117,6 @@ class TestBedrockStandard(ChatModelUnitTests):
                 "aws_session_token": "token",
             },
         )
-
-    @pytest.mark.xfail(reason="Pending mapping + init validator in core")
-    def test_serdes(self, model: BaseChatModel, snapshot: SnapshotAssertion) -> None:
-        super().test_serdes(model, snapshot)
 
 
 def test_profile() -> None:
