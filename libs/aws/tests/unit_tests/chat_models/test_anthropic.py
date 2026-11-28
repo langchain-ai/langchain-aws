@@ -1,15 +1,24 @@
 """ChatAnthropicBedrock tests."""
 
 import re
-from typing import Tuple, Type, cast
+import warnings
+from typing import Any, Tuple, Type, cast
+from unittest.mock import patch
 
 import pytest
 from anthropic.types import RawMessageDeltaEvent, RawMessageStopEvent
 from langchain_anthropic.data._profiles import _PROFILES as ANTHROPIC_PROFILES
+from langchain_core.exceptions import ModelRefusalError, OutputParserException
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessageChunk, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+)
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_tests.unit_tests import ChatModelUnitTests
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 from pytest import MonkeyPatch
 
 from langchain_aws import ChatAnthropicBedrock
@@ -733,3 +742,170 @@ def test_chat_anthropic_bedrock_stream_message_delta_without_reasoning_tokens() 
         "output_tokens": 188,
         "total_tokens": 188,
     }
+
+
+@pytest.mark.parametrize(
+    ("model_id", "expected"),
+    [
+        ("global.anthropic.claude-sonnet-5-5", "auto"),
+        ("anthropic.claude-sonnet-5-5", "auto"),
+        ("anthropic.claude-opus-5-5", "auto"),
+        ("anthropic.claude-sonnet-4-6", "any"),
+    ],
+)
+def test_chat_anthropic_bedrock_forced_tool_choice_downgraded_when_unsupported(
+    model_id: str, expected: str
+) -> None:
+    """Forced tool_choice becomes auto for models that reject it."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model=model_id,
+        region_name="us-east-1",
+    )
+    tool = {"name": "t", "description": "d", "input_schema": {"type": "object"}}
+    if expected == "auto":
+        with pytest.warns(UserWarning, match="does not support forced tool_choice"):
+            bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    else:
+        bound = cast(Any, model.bind_tools([tool], tool_choice="any"))
+    assert bound.kwargs["tool_choice"]["type"] == expected
+
+
+@pytest.mark.parametrize("include_raw", [False, True])
+@pytest.mark.parametrize("use_dict_schema", [False, True])
+def test_chat_anthropic_bedrock_structured_output_raises_on_prose(
+    include_raw: bool, use_dict_schema: bool
+) -> None:
+    """Unforced structured output warns and raises on prose without forcing tool use."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+        max_tokens=64,
+    )
+
+    class Answer(BaseModel):
+        value: int
+
+    schema: dict[str, Any] | type = (
+        {
+            "name": "Answer",
+            "description": "Structured answer",
+            "input_schema": {
+                "type": "object",
+                "properties": {"value": {"type": "integer"}},
+                "required": ["value"],
+            },
+        }
+        if use_dict_schema
+        else Answer
+    )
+    reply = ChatResult(generations=[ChatGeneration(message=AIMessage(content="prose"))])
+    with pytest.warns(UserWarning, match="OutputParserException.*json_schema"):
+        chain = model.with_structured_output(schema, include_raw=include_raw)
+    with patch.object(
+        ChatAnthropicBedrock, "_generate", return_value=reply
+    ) as generate:
+        with pytest.raises(OutputParserException):
+            chain.invoke("6 * 7?")
+    assert generate.call_args.kwargs.get("tool_choice") is None
+
+
+@pytest.mark.parametrize("include_raw", [False, True])
+def test_chat_anthropic_bedrock_structured_output_parses_tool_call(
+    include_raw: bool,
+) -> None:
+    """Routed Sonnet 5.5 structured output parses tool calls with unforced choice."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+        max_tokens=64,
+    )
+
+    class Answer(BaseModel):
+        value: int
+
+    msg = AIMessage(
+        content="",
+        tool_calls=[{"name": "Answer", "args": {"value": 42}, "id": "call_1"}],
+    )
+    reply = ChatResult(generations=[ChatGeneration(message=msg)])
+    with pytest.warns(UserWarning, match="OutputParserException"):
+        chain = model.with_structured_output(Answer, include_raw=include_raw)
+    with patch.object(
+        ChatAnthropicBedrock, "_generate", return_value=reply
+    ) as generate:
+        res = chain.invoke("6 * 7?")
+    assert generate.call_args.kwargs.get("tool_choice") is None
+    if include_raw:
+        assert isinstance(res, dict)
+        assert res["parsed"] == Answer(value=42)
+        assert res["parsing_error"] is None
+    else:
+        assert res == Answer(value=42)
+
+
+def test_chat_anthropic_bedrock_structured_output_preserves_refusal() -> None:
+    """Refusal responses raise ModelRefusalError instead of OutputParserException."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+        max_tokens=64,
+    )
+
+    class Answer(BaseModel):
+        value: int
+
+    refusal_msg = AIMessage(
+        content=[{"type": "refusal", "refusal": "Cannot answer"}],
+        response_metadata={"stop_reason": "refusal"},
+    )
+    reply = ChatResult(generations=[ChatGeneration(message=refusal_msg)])
+    with patch.object(ChatAnthropicBedrock, "_generate", return_value=reply):
+        with pytest.warns(UserWarning, match="OutputParserException"):
+            chain = model.with_structured_output(Answer)
+        with pytest.raises(ModelRefusalError):
+            chain.invoke("hi")
+
+        with pytest.warns(UserWarning, match="OutputParserException"):
+            raw_chain = model.with_structured_output(Answer, include_raw=True)
+        raw_res = raw_chain.invoke("hi")
+    assert isinstance(raw_res, dict)
+    assert raw_res["parsed"] is None
+    assert isinstance(raw_res["parsing_error"], ModelRefusalError)
+
+
+def test_chat_anthropic_bedrock_structured_output_with_thinking_warns_once() -> None:
+    """Thinking enabled + unsupported model delegates without duplicate warnings."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+        max_tokens=2048,
+        thinking={"type": "enabled", "budget_tokens": 1024},
+    )
+
+    class Answer(BaseModel):
+        value: int
+
+    reply = ChatResult(generations=[ChatGeneration(message=AIMessage(content="prose"))])
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        chain = model.with_structured_output(Answer)
+    assert len(recorded) == 1
+    with patch.object(ChatAnthropicBedrock, "_generate", return_value=reply):
+        with pytest.raises(OutputParserException):
+            chain.invoke("6 * 7?")
+
+
+def test_chat_anthropic_bedrock_structured_output_json_schema_no_warning() -> None:
+    """Native json_schema structured output works cleanly without warnings."""
+    model = ChatAnthropicBedrock(  # type: ignore[call-arg]
+        model="global.anthropic.claude-sonnet-5-5",
+        region_name="us-east-1",
+        max_tokens=64,
+    )
+
+    class Answer(BaseModel):
+        value: int
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        model.with_structured_output(Answer, method="json_schema")

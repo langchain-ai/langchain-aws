@@ -4,6 +4,7 @@ import os
 import warnings
 from collections.abc import Callable, Mapping, Sequence
 from functools import cached_property
+from operator import itemgetter
 from typing import Any, Literal, cast
 
 import anthropic
@@ -13,7 +14,12 @@ from anthropic import (
     AsyncAnthropicBedrock,
     AsyncAnthropicBedrockMantle,
 )
-from langchain_anthropic.chat_models import ChatAnthropic
+from langchain_anthropic.chat_models import (
+    AnthropicTool,
+    ChatAnthropic,
+    convert_to_anthropic_tool,
+)
+from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import (
     LanguageModelInput,
     ModelProfile,
@@ -22,10 +28,16 @@ from langchain_core.language_models import (
 from langchain_core.language_models.chat_models import LangSmithParams
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.messages.ai import InputTokenDetails, UsageMetadata
-from langchain_core.runnables import Runnable
+from langchain_core.output_parsers.base import OutputParserLike
+from langchain_core.output_parsers.openai_tools import (
+    JsonOutputKeyToolsParser,
+    PydanticToolsParser,
+)
+from langchain_core.runnables import Runnable, RunnableMap, RunnablePassthrough
 from langchain_core.tools import BaseTool
 from langchain_core.utils import secret_from_env
-from pydantic import ConfigDict, Field, SecretStr, model_validator
+from langchain_core.utils.pydantic import is_basemodel_subclass
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from typing_extensions import Self
 
 from langchain_aws._version import _add_langchain_aws_version, _tag_user_agent
@@ -242,6 +254,133 @@ class ChatAnthropicBedrock(ChatAnthropic):
             }
 
         return payload
+
+    def bind_tools(
+        self,
+        tools: Sequence[Mapping[str, Any] | type | Callable | BaseTool],
+        *,
+        tool_choice: dict[str, str] | str | None = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, AIMessage]:
+        """Bind tool-like objects to `ChatAnthropicBedrock`.
+
+        Downgrades forced `tool_choice` values to `'auto'` for models whose
+        Bedrock inference profile rejects forced tool use.
+
+        Args:
+            tools: A list of tool definitions to bind to this chat model.
+            tool_choice: Which tool to require the model to call.
+            **kwargs: Additional parameters forwarded to `ChatAnthropic.bind_tools`.
+
+        Returns:
+            A `Runnable` binding the formatted tools to this chat model.
+        """
+        choice_type = (
+            tool_choice.get("type") if isinstance(tool_choice, dict) else tool_choice
+        )
+        if choice_type not in (None, "auto", "none") and forced_tool_choice_unsupported(
+            self.model
+        ):
+            warnings.warn(
+                f"Model {self.model} does not support forced tool_choice; "
+                "using tool_choice 'auto' instead.",
+                stacklevel=2,
+            )
+            tool_choice = "auto"
+        return super().bind_tools(tools, tool_choice=tool_choice, **kwargs)
+
+    def with_structured_output(
+        self,
+        schema: dict | type,
+        *,
+        include_raw: bool = False,
+        method: Literal["function_calling", "json_schema"] = "function_calling",
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, dict | BaseModel]:
+        """Model wrapper that returns outputs formatted to match the given schema.
+
+        Delegates to `ChatAnthropic.with_structured_output`, handling Bedrock
+        prefixed model IDs whose models reject forced `tool_choice`.
+
+        Args:
+            schema: The output schema (`dict`, `TypedDict`, or Pydantic `BaseModel`).
+            include_raw: If `True`, return a dict with `'raw'`, `'parsed'`, and
+                `'parsing_error'`.
+            method: Structured output method (`'function_calling'` or `'json_schema'`).
+            **kwargs: Additional keyword arguments forwarded to
+                `ChatAnthropic.with_structured_output`.
+
+        Returns:
+            A `Runnable` producing parsed output matching `schema` (or a dict
+            containing `'raw'`, `'parsed'`, and `'parsing_error'` when
+            `include_raw` is `True`).
+        """
+        thinking_enabled = self.thinking is not None and self.thinking.get("type") in (
+            "enabled",
+            "adaptive",
+        )
+        if (
+            method == "function_calling"
+            and forced_tool_choice_unsupported(self.model)
+            and not thinking_enabled
+        ):
+            formatted_tool = cast(AnthropicTool, convert_to_anthropic_tool(schema))
+            tool_name = formatted_tool["name"]
+            admonition = (
+                "You are attempting to use structured output via forced tool calling, "
+                "which is not supported when `thinking` is enabled or on "
+                f"{self.model}. This method will raise an OutputParserException if "
+                "tool calls are not generated. Consider `method='json_schema'`, "
+                "disabling `thinking` where supported, or adjusting your prompt to "
+                "ensure the tool is called."
+            )
+            warnings.warn(admonition, stacklevel=2)
+            bound_llm = self.bind_tools(
+                [schema],
+                ls_structured_output_format={
+                    "kwargs": {"method": "function_calling"},
+                    "schema": formatted_tool,
+                },
+            )
+
+            def _raise_if_no_tool_calls(message: AIMessage) -> AIMessage:
+                refused = message.response_metadata.get("stop_reason") == "refusal"
+                if not message.tool_calls and not refused:
+                    raise OutputParserException(admonition)
+                return message
+
+            llm: Runnable[LanguageModelInput, Any] = bound_llm | _raise_if_no_tool_calls
+
+            if isinstance(schema, type) and is_basemodel_subclass(schema):
+                output_parser: OutputParserLike = PydanticToolsParser(
+                    tools=[schema],
+                    first_tool_only=True,
+                )
+            else:
+                output_parser = JsonOutputKeyToolsParser(
+                    key_name=tool_name,
+                    first_tool_only=True,
+                )
+
+            if include_raw:
+                parser_assign = RunnablePassthrough.assign(
+                    parsed=itemgetter("raw") | output_parser,
+                    parsing_error=lambda _: None,
+                )
+                parser_none = RunnablePassthrough.assign(parsed=lambda _: None)
+                parser_with_fallback = parser_assign.with_fallbacks(
+                    [parser_none],
+                    exception_key="parsing_error",
+                )
+                return RunnableMap(raw=llm) | parser_with_fallback
+            return llm | output_parser
+
+        return super().with_structured_output(
+            schema,
+            include_raw=include_raw,
+            method=method,
+            **kwargs,
+        )
 
     @cached_property
     def _client_params(self) -> dict[str, Any]:
