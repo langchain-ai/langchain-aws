@@ -6,7 +6,7 @@ that filing, and the figures the answer key is computed from.
 
     python helpers/edgar_dataset.py --tickers CRWD ZS NET
 
-That writes `dataset.json` beside the notebooks, and `research_agent.py` picks it up on
+That writes `helpers/dataset.json`, and `research_agent.py` picks it up on
 the next import. Nothing else changes: the prompts, the checks and the notebooks are all
 written against whatever is in that file.
 
@@ -37,7 +37,7 @@ from typing import Any
 
 __all__ = ["build_dataset", "load_dataset", "DATASET_PATH"]
 
-DATASET_PATH = Path(__file__).resolve().parent.parent / "dataset.json"
+DATASET_PATH = Path(__file__).resolve().parent / "dataset.json"
 
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"

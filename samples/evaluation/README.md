@@ -32,8 +32,8 @@ tokens of raw filings.
 | # | Notebook | The story | Runtime | Cost |
 |---|---|---|---|---|
 | 1 | [`01_evaluate_deep_agents_locally.ipynb`](./01_evaluate_deep_agents_locally.ipynb) | **Your eval passes and measures nothing.** Three pitfalls, each demonstrated, then checks that provably fail when behavior breaks. | ~3 min | Bedrock + MicroVMs |
-| 2 | [`02_score_traces_with_agentcore_evaluations.ipynb`](./02_score_traces_with_agentcore_evaluations.ipynb) | **Score real traces with AWS evaluators, in seconds.** Replay recorded spans, no agent invocation, no deploy. | ~2 min | `Evaluate` calls only |
-| 3 | [`03_close_the_loop_on_agentcore_runtime.ipynb`](./03_close_the_loop_on_agentcore_runtime.ipynb) | **Let AgentCore find the bug, then verify its fix.** Deploy, cluster failures, get a prompt rewrite, A/B it. | ~60 min | real, teardown included |
+| 2 | [`02_score_traces_with_agentcore_evaluations.ipynb`](./02_score_traces_with_agentcore_evaluations.ipynb) | **Score real traces with AWS evaluators, in seconds.** Replay recorded spans, no agent invocation, no deploy, including a multi-dimension custom judge. | ~2 min | `Evaluate` calls only |
+| 3 | [`03_close_the_loop_on_agentcore_runtime.ipynb`](./03_close_the_loop_on_agentcore_runtime.ipynb) | **Let AgentCore find the bug, then verify its fix.** Deploy with the AgentCore CLI, let AgentCore run a dataset and cluster the failures, get a prompt rewrite, A/B it and a human fix on live traffic, then read monitoring. | ~90 min | real, teardown included |
 
 Notebook 2 needs no deploy and no agent run, so it is the cheapest way to learn the
 evaluation API. Start there if you only have a few minutes.
@@ -52,8 +52,13 @@ evaluation API. Start there if you only have a few minutes.
    after its own children, so the causally correct expectation is the one that fails.
 5. **The built-in evaluators cannot see wasted work.** They scored 1.0 in both arms of an
    A/B where one arm used 16% fewer tool calls.
-6. **A generated fix is a hypothesis.** Which sessions score poorly changes what the
-   recommendation proposes, so you verify rather than trust.
+6. **A generated fix is a hypothesis.** `FailureAnalysis` named the loop, but the
+   recommendation optimizes `GoalSuccessRate` and rewrote something else: in one run its
+   treatment still hit the recursion limit in 5 of 5 sessions, while the human fix
+   completed 9 of 9 against a control that completed 0 of 3.
+7. **A complete-looking answer can be invented.** A multi-dimension judge asks, in one
+   call, whether the figures were read from the filing or recalled, which no built-in
+   evaluator checks.
 
 ## Layout
 
@@ -62,8 +67,7 @@ evaluation/
 ├── 01_evaluate_deep_agents_locally.ipynb
 ├── 02_score_traces_with_agentcore_evaluations.ipynb
 ├── 03_close_the_loop_on_agentcore_runtime.ipynb
-├── dataset.json  generated: the companies and the figures the answer key uses
-├── helpers/      the modules the notebooks import, see helpers/README.md
+├── helpers/      the agent, the modules the notebooks import, and dataset.json
 ├── fixtures/     one recorded session, so notebook 2 needs no agent run
 ├── images/       architecture diagrams
 └── requirements.txt
@@ -89,7 +93,7 @@ export SEC_USER_AGENT="Your Team you@example.com"   # SEC asks for contact info
 python helpers/edgar_dataset.py --tickers CRWD ZS NET
 ```
 
-That reads the SEC's own APIs and writes `dataset.json`: the CIK, the most recent 10-K
+That reads the SEC's own APIs and writes `helpers/dataset.json`: the CIK, the most recent 10-K
 accession number, the two statement pages inside that filing, and the figures every
 graded metric is computed from. Re-run the notebooks and they now evaluate CrowdStrike,
 Zscaler and Cloudflare, with a correct answer key, without a line of code changing.
@@ -114,9 +118,9 @@ figures yourself. The evaluation code never asks where they came from.
 - An AWS account with [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/)
   enabled and Anthropic Claude model access in Bedrock
 - AWS credentials in the environment
-- For notebook 3 only: **CloudWatch Transaction Search enabled** in the same region.
-  Evaluation reads spans that only exist once it is on. One-time setup, about 10 minutes
-  to take effect: CloudWatch, X-Ray settings, Transaction Search, Enable.
+- For notebook 3 only: the [AgentCore CLI](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-get-started-cli.html) 1.2 or later,
+  `npm install -g @aws/agentcore` (Node.js 20 or later). Its first deploy also turns on
+  CloudWatch Transaction Search, which evaluation needs: without it there are no spans.
 
 ```bash
 pip install "langchain-aws[tools]>=1.7.6" "deepagents>=0.7.13" "bedrock-agentcore>=1.25.0"
