@@ -18,7 +18,7 @@ class BedrockRerank(BaseDocumentCompressor):
     """Bedrock client to use for compressing documents."""
 
     top_n: Optional[int] = 3
-    """Number of documents to return."""
+    """Number of documents to return. `None` returns every document, ranked."""
 
     region_name: Optional[str] = None
     """The aws region, e.g., `us-west-2`.
@@ -127,7 +127,9 @@ class BedrockRerank(BaseDocumentCompressor):
             return []
 
         effective_top_n = top_n if top_n is not None else self.top_n
-        if effective_top_n is not None:
+        if effective_top_n is None:
+            effective_top_n = len(documents)
+        else:
             effective_top_n = min(effective_top_n, len(documents))
 
         # Serialize documents for the Bedrock API
