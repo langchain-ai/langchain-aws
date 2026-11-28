@@ -282,6 +282,34 @@ class TestValkeySaverUnit:
 
         assert len(checkpoints) == 2
 
+    @pytest.mark.parametrize(
+        "limit, expected_steps", [(3, [9, 7, 5]), (5, [9, 7, 5, 3, 1])]
+    )
+    def test_list_with_filter_and_limit_returns_every_match_up_to_limit(
+        self, saver, limit, expected_steps
+    ):
+        """filter + limit must not skip matching checkpoints between batches."""
+        config = {"configurable": {"thread_id": "test-thread", "checkpoint_ns": ""}}
+        for i in range(10):
+            checkpoint = {
+                "v": 1,
+                "id": f"id{i:02d}",
+                "ts": f"2024-01-01T00:00:{i:02d}+00:00",
+                "channel_values": {},
+                "channel_versions": {},
+                "versions_seen": {},
+            }
+            source = "loop" if i % 2 else "input"
+            config = saver.put(config, checkpoint, {"source": source, "step": i}, {})
+
+        listed = saver.list(
+            {"configurable": {"thread_id": "test-thread"}},
+            filter={"source": "loop"},
+            limit=limit,
+        )
+
+        assert [c.metadata["step"] for c in listed] == expected_steps
+
     def test_put_writes(self, saver, fake_valkey_client):
         """Test storing writes."""
         config_with_checkpoint = {
