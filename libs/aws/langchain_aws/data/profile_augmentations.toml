@@ -69,15 +69,6 @@ pdf_tool_message = true
 image_tool_message = true
 tool_call_streaming = true
 
-[overrides."eu.anthropic.claude-fable-5"]
-reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
-reasoning_effort_default = "high"
-mid_conversation_system_messages = true
-mid_conversation_tools = true
-pdf_tool_message = true
-image_tool_message = true
-tool_call_streaming = true
-
 [overrides."global.anthropic.claude-fable-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 reasoning_effort_default = "high"
@@ -187,15 +178,6 @@ image_tool_message = true
 tool_call_streaming = true
 
 [overrides."in.anthropic.claude-opus-5"]
-reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
-reasoning_effort_default = "high"
-mid_conversation_system_messages = true
-mid_conversation_tools = true
-pdf_tool_message = true
-image_tool_message = true
-tool_call_streaming = true
-
-[overrides."jp.anthropic.claude-opus-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 reasoning_effort_default = "high"
 mid_conversation_system_messages = true
@@ -318,15 +300,6 @@ pdf_tool_message = true
 image_tool_message = true
 tool_call_streaming = true
 
-[overrides."jp.anthropic.claude-sonnet-5"]
-reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
-reasoning_effort_default = "high"
-mid_conversation_system_messages = true
-mid_conversation_tools = false
-pdf_tool_message = true
-image_tool_message = true
-tool_call_streaming = true
-
 [overrides."us.anthropic.claude-sonnet-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 reasoning_effort_default = "high"
@@ -347,6 +320,16 @@ tool_call_streaming = true
 tool_choice = false
 
 [overrides."au.anthropic.claude-sonnet-5-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+reasoning_effort_default = "high"
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
+tool_call_streaming = true
+tool_choice = false
+
+[overrides."ca.anthropic.claude-sonnet-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 reasoning_effort_default = "high"
 mid_conversation_system_messages = true
@@ -396,6 +379,15 @@ image_tool_message = true
 tool_call_streaming = true
 
 [overrides."au.anthropic.claude-haiku-5-5"]
+reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
+reasoning_effort_default = "medium"
+mid_conversation_system_messages = true
+mid_conversation_tools = true
+pdf_tool_message = true
+image_tool_message = true
+tool_call_streaming = true
+
+[overrides."ca.anthropic.claude-haiku-5-5"]
 reasoning_effort_levels = ["low", "medium", "high", "xhigh", "max"]
 reasoning_effort_default = "medium"
 mid_conversation_system_messages = true
